@@ -8,8 +8,8 @@ locals {
   delegate_sa_name       = "harness-delegate"
   delegate_iam_role_name = "${local.name_prefix}-harness-delegate"
 
-  ci_cache_bucket_name = "${local.name_prefix}-harness-ci-cache"
-  tf_state_bucket_name = "${local.name_prefix}-harness-tf-state"
+  ci_cache_bucket_name = "${local.name_suffix}-harness-ci-cache"
+  tf_state_bucket_name = "${local.name_suffix}-harness-tf-state"
 
   tags = {
     project     = var.project_name
