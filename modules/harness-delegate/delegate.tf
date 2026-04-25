@@ -14,6 +14,8 @@ locals {
   # The INIT_SCRIPT env var runs when the delegate pod starts and installs
   # OpenTofu into /usr/local/bin so it is available on the default PATH.
   delegate_init_script = <<-EOT
+    echo "==> Installing unzip via microdnf"
+    microdnf install -y unzip
     echo "==> Installing OpenTofu ${var.terraform_version}"
     curl -fsSL \
       "https://github.com/opentofu/opentofu/releases/download/v${var.terraform_version}/tofu_${var.terraform_version}_linux_${var.terraform_arch}.zip" \

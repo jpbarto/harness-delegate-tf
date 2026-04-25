@@ -6,7 +6,7 @@
 # ---------------------------------------------------------------------------
 resource "harness_platform_connector_aws" "delegate" {
   identifier  = replace("aws_${local.name_suffix}", "-", "_")
-  name        = "AWS ${var.region} (${var.environment})"
+  name        = "AWS ${var.region} - ${var.environment}"
   description = "AWS connector for ${var.region} — credentials via IRSA on the Harness Delegate pod"
 
   # IRSA: Harness tells the delegate to use its pod's IRSA-bound IAM role.
@@ -28,7 +28,7 @@ resource "harness_platform_connector_aws" "delegate" {
 # ---------------------------------------------------------------------------
 resource "harness_platform_connector_kubernetes" "delegate" {
   identifier  = replace("k8s_${local.name_suffix}", "-", "_")
-  name        = "K8s ${var.eks_cluster_name} (${var.region})"
+  name        = "K8s ${var.eks_cluster_name} - ${var.region}"
   description = "Kubernetes connector for EKS cluster ${var.eks_cluster_name} in ${var.region} — credentials inherited from the Harness Delegate"
 
   inherit_from_delegate {
