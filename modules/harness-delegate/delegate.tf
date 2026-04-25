@@ -31,7 +31,7 @@ locals {
 resource "helm_release" "harness_delegate" {
   name             = "harness-delegate"
   repository       = "https://app.harness.io/storage/harness-download/delegate-helm-chart/"
-  chart            = "harness-delegate"
+  chart            = "harness-delegate-ng"
   namespace        = kubernetes_namespace.harness_delegate.metadata[0].name
   create_namespace = false
   wait             = true
@@ -46,14 +46,17 @@ resource "helm_release" "harness_delegate" {
 
   values = [
     yamlencode({
-      replicaCount = var.delegate_replicas
+      replicas = var.delegate_replicas
 
       accountId       = var.harness_account_id
-      delegateToken    = harness_platform_delegatetoken.delegate.value
+      delegateToken   = harness_platform_delegatetoken.delegate.value
       delegateName    = var.delegate_name
       deployMode      = "KUBERNETES"
       nextGen         = true
       managerEndpoint = var.harness_manager_endpoint
+
+      # Run init script before delegate starts — used to install OpenTofu.
+      initScript = local.delegate_init_script
 
       # Use the pre-created service account (annotated for IRSA).
       serviceAccount = {
@@ -62,18 +65,13 @@ resource "helm_release" "harness_delegate" {
       }
 
       # Extra environment variables injected into the delegate container.
-      envVars = {
-        # Install OpenTofu/Terraform at pod startup.
-        INIT_SCRIPT = local.delegate_init_script
-
-        # Tell the delegate where its S3 CI-cache bucket lives.
-        HARNESS_CI_CACHE_BUCKET = aws_s3_bucket.ci_cache.bucket
-        HARNESS_CI_CACHE_REGION = var.region
-
-        # Expose TF state bucket so pipeline scripts can reference it.
-        HARNESS_TF_STATE_BUCKET = aws_s3_bucket.tf_state.bucket
-        HARNESS_TF_STATE_REGION = var.region
-      }
+      # harness-delegate-ng chart uses custom_envs: list of {name, value}.
+      custom_envs = [
+        { name = "HARNESS_CI_CACHE_BUCKET", value = aws_s3_bucket.ci_cache.bucket },
+        { name = "HARNESS_CI_CACHE_REGION", value = var.region },
+        { name = "HARNESS_TF_STATE_BUCKET", value = aws_s3_bucket.tf_state.bucket },
+        { name = "HARNESS_TF_STATE_REGION", value = var.region },
+      ]
 
       # Optionally pin the delegate image tag.
       image = var.delegate_image_tag != "" ? { tag = var.delegate_image_tag } : {}

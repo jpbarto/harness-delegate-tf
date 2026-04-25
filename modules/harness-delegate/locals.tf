@@ -8,8 +8,11 @@ locals {
   delegate_sa_name       = "harness-delegate"
   delegate_iam_role_name = "${local.name_prefix}-harness-delegate"
 
-  ci_cache_bucket_name = "${local.name_suffix}-harness-ci-cache"
-  tf_state_bucket_name = "${local.name_suffix}-harness-tf-state"
+  # S3 bucket names cannot contain underscores — replace with hyphens.
+  bucket_safe_suffix = replace(local.name_suffix, "_", "-")
+
+  ci_cache_bucket_name = "${local.bucket_safe_suffix}-harness-ci-cache"
+  tf_state_bucket_name = "${local.bucket_safe_suffix}-harness-tf-state"
 
   tags = {
     project     = var.project_name
