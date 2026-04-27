@@ -6,7 +6,7 @@ locals {
 
   delegate_namespace     = "harness-delegate"
   delegate_sa_name       = "harness-delegate"
-  delegate_iam_role_name = "${local.name_prefix}-harness-delegate"
+  delegate_iam_role_name = var.delegate_iam_role_name != null ? var.delegate_iam_role_name : "${local.name_prefix}-harness-delegate"
 
   # S3 bucket names cannot contain underscores — replace with hyphens.
   bucket_safe_suffix = replace(local.name_suffix, "_", "-")

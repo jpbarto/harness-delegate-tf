@@ -76,3 +76,9 @@ variable "terraform_arch" {
   type        = string
   default     = "amd64"
 }
+
+variable "delegate_iam_role_name" {
+  description = "Override for the IAM role name assigned to the Harness Delegate via IRSA. Defaults to '<project_name>-<environment>-harness-delegate' when null."
+  type        = string
+  default     = null
+}

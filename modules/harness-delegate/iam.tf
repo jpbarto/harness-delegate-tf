@@ -1,26 +1,16 @@
 # ---------------------------------------------------------------------------
-# IAM role — assumed by the Harness Delegate pod via IRSA
+# IAM role — assumed by the Harness Delegate pod via sts:AssumeRole.
+# The EKS worker node IAM role is the trusted principal; the delegate calls
+# sts:AssumeRole from the node's instance profile at runtime.
 # ---------------------------------------------------------------------------
 data "aws_iam_policy_document" "delegate_assume" {
   statement {
     effect  = "Allow"
-    actions = ["sts:AssumeRoleWithWebIdentity"]
+    actions = ["sts:AssumeRole"]
 
     principals {
-      type        = "Federated"
-      identifiers = [data.aws_iam_openid_connect_provider.eks.arn]
-    }
-
-    condition {
-      test     = "StringEquals"
-      variable = "${replace(data.aws_iam_openid_connect_provider.eks.url, "https://", "")}:sub"
-      values   = ["system:serviceaccount:${local.delegate_namespace}:${local.delegate_sa_name}"]
-    }
-
-    condition {
-      test     = "StringEquals"
-      variable = "${replace(data.aws_iam_openid_connect_provider.eks.url, "https://", "")}:aud"
-      values   = ["sts.amazonaws.com"]
+      type        = "AWS"
+      identifiers = [data.aws_eks_node_group.default.node_role_arn]
     }
   }
 }

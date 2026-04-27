@@ -11,16 +11,13 @@ resource "kubernetes_namespace" "harness_delegate" {
 }
 
 # ---------------------------------------------------------------------------
-# Service account — annotated with the IAM role ARN for IRSA
+# Service account — no IRSA annotation; the delegate assumes its IAM role
+# explicitly via sts:AssumeRole using the node instance profile.
 # ---------------------------------------------------------------------------
 resource "kubernetes_service_account" "harness_delegate" {
   metadata {
     name      = local.delegate_sa_name
     namespace = kubernetes_namespace.harness_delegate.metadata[0].name
-
-    annotations = {
-      "eks.amazonaws.com/role-arn" = aws_iam_role.delegate.arn
-    }
 
     labels = {
       "app.kubernetes.io/name"       = local.delegate_sa_name
