@@ -55,6 +55,32 @@ resource "helm_release" "harness_gitops_agent" {
         name   = kubernetes_service_account.harness_gitops_agent.metadata[0].name
       }
 
+      # -----------------------------------------------------------------------
+      # SaaS / cloud mode — disable the bundled data-stores that are only
+      # needed for a self-hosted (on-prem) Harness installation.  When these
+      # are disabled the wait-for-mongo and wait-for-timescale init containers
+      # are removed and the agent connects directly to the Harness SaaS backend.
+      # -----------------------------------------------------------------------
+      mongo = {
+        enabled  = false
+        protocol = "mongodb"
+        hosts    = []
+      }
+
+      timescaledb = {
+        enabled = false
+      }
+
+      redis = {
+        enabled = false
+      }
+
+      argocd = {
+        # The chart deploys its own ArgoCD instance when using
+        # CONNECTED_ARGO_PROVIDER — keep it enabled.
+        enabled = true
+      }
+
       gitopsAgent = {
         config = {
           # Core agent identity — values come from the registration resource.
@@ -62,8 +88,11 @@ resource "helm_release" "harness_gitops_agent" {
           AGENT_IDENTIFIER = harness_platform_gitops_agent.gitops.identifier
           AGENT_TOKEN      = harness_platform_gitops_agent.gitops.agent_token
 
-          # Where the agent connects to reach Harness SaaS.
-          MANAGER_HOST_AND_PORT     = var.harness_manager_endpoint
+          # Tell the agent it is connecting to Harness SaaS (not self-hosted).
+          GITOPS_SERVICE_HTTP_URL = var.harness_manager_endpoint
+          MANAGER_HOST_AND_PORT   = var.harness_manager_endpoint
+
+          # With SaaS the remote service is not the manager endpoint directly.
           REMOTE_SERVICE_IS_MANAGER = "false"
 
           # Disable automatic webhook creation on first sync.
