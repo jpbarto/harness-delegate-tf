@@ -44,8 +44,8 @@ resource "random_password" "gitops_redis" {
 # ---------------------------------------------------------------------------
 resource "helm_release" "harness_gitops_agent" {
   name             = "harness-gitops-agent"
-  repository       = "https://harness.github.io/helm-gitops"
-  chart            = "gitops"
+  repository       = "https://harness.github.io/gitops-helm"
+  chart            = "gitops-helm"
   namespace        = kubernetes_namespace.harness_gitops.metadata[0].name
   create_namespace = false
   wait             = true
