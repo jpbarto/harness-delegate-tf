@@ -21,10 +21,26 @@ resource "harness_platform_gitops_agent" "gitops" {
 }
 
 # ---------------------------------------------------------------------------
+# Redis password — generated once, stored in state, never rotated unless
+# the resource is tainted.  Passed to harness.secrets.redisPassword so the
+# ArgoCD-internal Redis and the redisSecretInit job agree on the same value.
+# ---------------------------------------------------------------------------
+resource "random_password" "gitops_redis" {
+  length           = 16
+  special          = true
+  override_special = "_-"
+}
+
+# ---------------------------------------------------------------------------
 # Harness GitOps Agent — Helm deployment
 #
-# Chart: harness/gitops  (https://harness.github.io/helm-gitops)
-# Values structure mirrors the override.yaml Harness generates in the UI.
+# Values mirror the override.yaml Harness generates in the UI.
+# Terraform-managed values (agent token, identifier, redis password, names)
+# are substituted in place of the static strings in the UI download.
+#
+# References:
+#   https://github.com/harness/gitops-helm/blob/main/values.yaml
+#   https://github.com/argoproj/argo-helm/blob/main/charts/argo-cd/values.yaml
 # ---------------------------------------------------------------------------
 resource "helm_release" "harness_gitops_agent" {
   name             = "harness-gitops-agent"
@@ -36,8 +52,6 @@ resource "helm_release" "harness_gitops_agent" {
   timeout          = 600
   cleanup_on_fail  = true
 
-  # The RBAC, service account and Harness-side registration must all exist
-  # before the pod starts.
   depends_on = [
     kubernetes_cluster_role_binding.harness_gitops_agent_admin,
     kubernetes_service_account.harness_gitops_agent,
@@ -47,7 +61,7 @@ resource "helm_release" "harness_gitops_agent" {
   values = [
     yamlencode({
       # -----------------------------------------------------------------------
-      # ArgoCD image — pinned to the Harness-certified build.
+      # ArgoCD image — Harness-certified build
       # -----------------------------------------------------------------------
       global = {
         image = {
@@ -64,7 +78,8 @@ resource "helm_release" "harness_gitops_agent" {
           accountIdentifier = var.harness_account_id
           orgIdentifier     = ""
           projectIdentifier = ""
-          agentIdentifier   = harness_platform_gitops_agent.gitops.identifier
+          # Computed by the registration resource above.
+          agentIdentifier = harness_platform_gitops_agent.gitops.identifier
         }
 
         secrets = {
@@ -73,17 +88,16 @@ resource "helm_release" "harness_gitops_agent" {
             enabled = false
             secret  = ""
           }
+          # Stable random password shared between Redis and redisSecretInit.
+          redisPassword = random_password.gitops_redis.result
         }
 
-        # SaaS endpoints — prod1 suffix is standard for app.harness.io.
-        gitopsServerHost = "${var.harness_manager_endpoint}/prod1/gitops"
-        networkPolicy = {
-          create = true
-        }
+        gitopsServerHost   = "${var.harness_manager_endpoint}/prod1/gitops"
+        networkPolicy      = { create = true }
         createClusterRoles = true
 
         configMap = {
-          logLevel = "INFO"
+          logLevel = "DEBUG"
 
           http = {
             agentHttpTarget = "${var.harness_manager_endpoint}/gitops"
@@ -96,27 +110,15 @@ resource "helm_release" "harness_gitops_agent" {
           }
         }
 
-        disasterRecovery = {
-          enabled    = false
-          identifier = ""
-        }
-
-        openshift = {
-          enabled = false
-        }
-
-        flux = {
-          enabled = false
-        }
-
-        argocdHarnessPlugin = {
-          enabled = false
-        }
+        disasterRecovery    = { enabled = false, identifier = "" }
+        openshift           = { enabled = false }
+        flux                = { enabled = false }
+        argocdHarnessPlugin = { enabled = false }
       }
 
       # -----------------------------------------------------------------------
       # ArgoCD sub-chart
-      # Note: the map key contains a hyphen and must be quoted in HCL.
+      # The key contains a hyphen so it must be quoted in HCL.
       # -----------------------------------------------------------------------
       "argo-cd" = {
         enabled = true
@@ -158,9 +160,7 @@ resource "helm_release" "harness_gitops_agent" {
           }
         }
 
-        redisSecretInit = {
-          enabled = true
-        }
+        redisSecretInit = { enabled = true }
 
         "redis-ha" = {
           enabled = false
@@ -175,6 +175,16 @@ resource "helm_release" "harness_gitops_agent" {
               tag        = "3.2.14-alpine3.23"
             }
           }
+          configmapTest = {
+            image = {
+              repository = "docker.io/harness/shellcheck"
+              tag        = "v0.11.0"
+            }
+          }
+          resources = {
+            requests = { cpu = "500m", memory = "512Mi" }
+            limits   = { cpu = "1", memory = "1Gi" }
+          }
         }
 
         repoServer = {
@@ -183,19 +193,21 @@ resource "helm_release" "harness_gitops_agent" {
             requests = { cpu = "1", memory = "3Gi" }
             limits   = { cpu = "2", memory = "3Gi" }
           }
+
           env = [
-            { name = "HELM_PLUGINS", value = "/helm-sops-tools/helm-plugins/" },
-            { name = "HELM_SECRETS_CURL_PATH", value = "/helm-sops-tools/curl" },
-            { name = "HELM_SECRETS_SOPS_PATH", value = "/helm-sops-tools/sops" },
-            { name = "HELM_SECRETS_KUBECTL_PATH", value = "/helm-sops-tools/kubectl" },
-            { name = "HELM_SECRETS_BACKEND", value = "sops" },
-            { name = "HELM_SECRETS_VALUES_ALLOW_SYMLINKS", value = "false" },
-            { name = "HELM_SECRETS_VALUES_ALLOW_ABSOLUTE_PATH", value = "true" },
+            { name = "HELM_PLUGINS",                             value = "/helm-sops-tools/helm-plugins/" },
+            { name = "HELM_SECRETS_CURL_PATH",                   value = "/helm-sops-tools/curl" },
+            { name = "HELM_SECRETS_SOPS_PATH",                   value = "/helm-sops-tools/sops" },
+            { name = "HELM_SECRETS_KUBECTL_PATH",                value = "/helm-sops-tools/kubectl" },
+            { name = "HELM_SECRETS_BACKEND",                     value = "sops" },
+            { name = "HELM_SECRETS_VALUES_ALLOW_SYMLINKS",       value = "false" },
+            { name = "HELM_SECRETS_VALUES_ALLOW_ABSOLUTE_PATH",  value = "true" },
             { name = "HELM_SECRETS_VALUES_ALLOW_PATH_TRAVERSAL", value = "false" },
-            { name = "HELM_SECRETS_WRAPPER_ENABLED", value = "true" },
-            { name = "HELM_SECRETS_HELM_PATH", value = "/usr/local/bin/helm" },
-            { name = "PATH", value = "/helm-sops-tools/helm-secrets:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" },
+            { name = "HELM_SECRETS_WRAPPER_ENABLED",             value = "true" },
+            { name = "HELM_SECRETS_HELM_PATH",                   value = "/usr/local/bin/helm" },
+            { name = "PATH",                                     value = "/helm-sops-tools/helm-secrets:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" },
           ]
+
           initContainers = [
             {
               name            = "sops-helm-secrets-tool"
@@ -207,10 +219,42 @@ resource "helm_release" "harness_gitops_agent" {
               }
               command = ["sh", "-ec"]
               args = [
-                "cp -r /custom-tools/. /helm-sops-tools\ncp /helm-sops-tools/helm-plugins/helm-secrets/scripts/wrapper/helm.sh /helm-sops-tools/helm\nmkdir -p /helm-sops-tools/helm-secrets && cp /helm-sops-tools/helm-plugins/helm-secrets/scripts/wrapper/helm.sh /helm-sops-tools/helm-secrets/helm\nchmod +x /helm-sops-tools/helm-secrets/*\nchmod +x /helm-sops-tools/*\n"
+                join("\n", [
+                  "cp -r /custom-tools/. /helm-sops-tools",
+                  "cp /helm-sops-tools/helm-plugins/helm-secrets/scripts/wrapper/helm.sh /helm-sops-tools/helm",
+                  "mkdir -p /helm-sops-tools/helm-secrets && cp /helm-sops-tools/helm-plugins/helm-secrets/scripts/wrapper/helm.sh /helm-sops-tools/helm-secrets/helm",
+                  "chmod +x /helm-sops-tools/helm-secrets/*",
+                  "chmod +x /helm-sops-tools/*",
+                ])
               ]
               volumeMounts = [
                 { mountPath = "/helm-sops-tools", name = "helm-sops-tools" }
+              ]
+            }
+          ]
+
+          extraContainers = [
+            {
+              command         = ["/var/run/argocd/argocd-cmp-server"]
+              image           = "docker.io/harness/gitops-agent-installer-helper:v0.0.13"
+              imagePullPolicy = "IfNotPresent"
+              name            = "argocd-harness-plugin"
+              resources = {
+                requests = { cpu = "500m", memory = "512Mi" }
+                limits   = { cpu = "500m", memory = "512Mi" }
+              }
+              securityContext = {
+                capabilities = { drop = ["NET_RAW"] }
+                runAsGroup   = 999
+                runAsUser    = 999
+              }
+              terminationMessagePath   = "/dev/termination-log"
+              terminationMessagePolicy = "File"
+              volumeMounts = [
+                { mountPath = "/var/run/argocd",                             name = "var-files" },
+                { mountPath = "/home/argocd/cmp-server/plugins",             name = "plugins" },
+                { mountPath = "/tmp",                                         name = "tmp" },
+                { mountPath = "/home/argocd/cmp-server/config/plugin.yaml",  name = "argocd-harness-plugin", subPath = "harness.yaml" },
               ]
             }
           ]
@@ -221,6 +265,7 @@ resource "helm_release" "harness_gitops_agent" {
       # GitOps agent pod
       # -----------------------------------------------------------------------
       agent = {
+        # Display name shown in the Harness UI — matches the registered name.
         harnessName = var.gitops_agent_name
         image = {
           repository = "docker.io/harness/gitops-agent"
@@ -231,15 +276,13 @@ resource "helm_release" "harness_gitops_agent" {
           requests = { cpu = "500m", memory = "512Mi" }
           limits   = { cpu = "1", memory = "1Gi" }
         }
-        fipsEnabled = false
-        autoscaling = {
-          enabled = false
-        }
+        fipsEnabled      = false
+        autoscaling      = { enabled = false }
         highAvailability = false
         proxy = {
-          enabled     = false
-          httpProxy   = ""
-          httpsProxy  = ""
+          enabled    = false
+          httpProxy  = ""
+          httpsProxy = ""
         }
 
         # Reuse the pre-created service account bound to cluster-admin.
@@ -250,7 +293,7 @@ resource "helm_release" "harness_gitops_agent" {
       }
 
       # -----------------------------------------------------------------------
-      # Upgrader sidecar — keeps the agent image up to date automatically.
+      # Upgrader — keeps the agent image current automatically.
       # -----------------------------------------------------------------------
       upgrader = {
         enabled = true
