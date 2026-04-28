@@ -82,3 +82,12 @@ variable "delegate_iam_role_name" {
   type        = string
   default     = null
 }
+
+# ---------------------------------------------------------------------------
+# GitOps Agent
+# ---------------------------------------------------------------------------
+variable "gitops_agent_name" {
+  description = "Display name for the Harness GitOps agent registered at the account level."
+  type        = string
+  default     = "k8s-gitops-agent"
+}
